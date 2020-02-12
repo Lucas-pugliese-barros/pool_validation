@@ -1,14 +1,20 @@
 package com.pugliese.annotation.validation.endpoints.main;
 
 import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.pugliese.annotation.validation.fieldValidation.EqualsToValidation;
+import com.pugliese.annotation.validation.fieldValidation.ValidationResult;
 import com.pugliese.annotation.validation.fieldValidation.annotations.EqualsTo;
+import com.pugliese.annotation.validation.fieldValidation.validations.EqualsToValidation;
 import com.pugliese.annotation.validation.models.MyModel;
 
+import org.springframework.lang.Nullable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -22,7 +28,9 @@ public class MainEndpoint {
 
         try {
             MyModel myModel = mapper.convertValue(jsonNode, MyModel.class);
-            executeValidation(myModel);
+
+            List<ValidationResult> validationResults = executeValidation(myModel);
+            verifyValidationResults(validationResults);            
 
             return myModel.toString();
         } catch (Exception e) {
@@ -38,16 +46,20 @@ public class MainEndpoint {
         return mapper;
     }
 
-    public void executeValidation(Object object) throws Exception {
+    public List<ValidationResult> executeValidation(Object object) throws Exception {
+        List<ValidationResult> validationResults = new ArrayList<>();
+
         Class<?> objectClass = object.getClass();
         for (Field field : objectClass.getDeclaredFields()) {
             field.setAccessible(true);
 
-            verifyAndExecuteValidationEqualsTo(field, object);
+            validationResults.add(verifyAndExecuteValidationEqualsTo(field, object));
         }
+
+        return validationResults;
     }
 
-    public void verifyAndExecuteValidationEqualsTo(Field field, Object object)
+    public @Nullable ValidationResult verifyAndExecuteValidationEqualsTo(Field field, Object object)
      throws Exception {
 
         if (field.isAnnotationPresent(EqualsTo.class)) {
@@ -56,16 +68,27 @@ public class MainEndpoint {
 
             EqualsToValidation validation = new EqualsToValidation(valueShouldBe, currentValue);
 
-            boolean isValid = validation.isValid();
+            ValidationResult validationResult = validation.isValid();
             System.out.println(field.get(object));
 
-            if (!isValid) {
-                String message = "The " + field.getName() + " is invalid";
-                throw new Exception(message);
-            }
-
             System.out.println(valueShouldBe);
-            System.out.println("The value isValid:" + isValid);
+            System.out.println("The value isValid:" + validationResult.isValid);
+
+            return validationResult;
+        }
+        return null;
+    }
+
+    public void verifyValidationResults(List<ValidationResult> validationResults) {
+        validationResults = validationResults.stream()
+            .filter(Objects::nonNull)
+            .filter(validationResult -> !validationResult.isValid)
+            .collect(Collectors.toList());
+
+        if(!validationResults.isEmpty()) {
+            System.out.println("------------Erros----------");
+            validationResults.stream()
+                .forEach(validationResult -> System.out.println(validationResult.message));
         }
     }
 }
